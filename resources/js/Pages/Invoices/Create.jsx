@@ -9,9 +9,22 @@ export default function InvoiceCreate({ auth, customers, products }) {
         items: [{ product_id: "", quantity: 1 }],
     });
 
+    const [stockError, setStockError] = useState(null);
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        post(route("invoices.store"));
+        setStockError(null); // Reset error before submission
+        post(route("invoices.store"), {
+            onError: (errors) => {
+                // Check for stock error from backend
+                if (
+                    errors.message &&
+                    errors.message.includes("Insufficient stock")
+                ) {
+                    setStockError(errors.message);
+                }
+            },
+        });
     };
 
     const addItem = () => {
@@ -42,6 +55,11 @@ export default function InvoiceCreate({ auth, customers, products }) {
                 <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div className="p-6 bg-white border-b border-gray-200">
                         <form onSubmit={handleSubmit}>
+                            {stockError && (
+                                <div className="mb-4 p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+                                    <p>{stockError}</p>
+                                </div>
+                            )}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                                 <div>
                                     <label
@@ -174,12 +192,22 @@ export default function InvoiceCreate({ auth, customers, products }) {
                                                         <option
                                                             key={product.id}
                                                             value={product.id}
+                                                            className={
+                                                                product.quantity <=
+                                                                5
+                                                                    ? "text-red-500"
+                                                                    : ""
+                                                            }
                                                         >
                                                             {product.name} ($
                                                             {product.price.toFixed(
                                                                 2
                                                             )}
-                                                            )
+                                                            ) - Stock:{" "}
+                                                            {product.quantity}
+                                                            {product.quantity <=
+                                                                5 &&
+                                                                " (Low Stock)"}
                                                         </option>
                                                     ))}
                                             </select>

@@ -38,45 +38,52 @@ class InvoiceController extends Controller
 
     public function store(Request $request)
 {
-    $validated = $request->validate([
-        'customer_id' => 'required|exists:customers,id',
-        'invoice_date' => 'required|date',
-        'items' => 'required|array|min:1',
-        'items.*.product_id' => 'required|exists:products,id',
-        'items.*.quantity' => 'required|integer|min:1',
-    ]);
-
-    return DB::transaction(function () use ($validated) {
-        // Create the invoice
-        $invoice = Invoice::create([
-            'customer_id' => $validated['customer_id'],
-            'invoice_date' => $validated['invoice_date'],
-            'total_amount' => 0,
+    return DB::transaction(function () use ($request) {
+        $validated = $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'invoice_date' => 'required|date',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|integer|min:1',
         ]);
 
         $totalAmount = 0;
 
+        // First validate all products have sufficient stock
         foreach ($validated['items'] as $item) {
-            $product = Product::findOrFail($item['product_id']);
+            $product = Product::find($item['product_id']);
             
-            // Check stock availability
             if ($product->quantity < $item['quantity']) {
-                throw new \Exception("Insufficient stock for product: {$product->name}");
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'message' => "Insufficient stock for product: {$product->name}. Available: {$product->quantity}"
+                ]);
             }
+        }
 
-            $itemTotal = $product->price * $item['quantity'];
-            
+        // Create the invoice
+        $invoice = Invoice::create([
+            'customer_id' => $validated['customer_id'],
+            'invoice_date' => $validated['invoice_date'],
+            'total_amount' => 0, // Temporary value, will be updated
+        ]);
+
+        // Process items and calculate total
+        foreach ($validated['items'] as $item) {
+            $product = Product::find($item['product_id']);
+            $unitPrice = $product->price;
+            $itemTotal = $unitPrice * $item['quantity'];
+            $totalAmount += $itemTotal;
+
             // Create invoice item
-            $invoice->items()->create([
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
                 'product_id' => $product->id,
                 'quantity' => $item['quantity'],
-                'unit_price' => $product->price,
+                'unit_price' => $unitPrice,
                 'total_price' => $itemTotal,
             ]);
 
-            $totalAmount += $itemTotal;
-            
-            // Update product stock
+            // Update product quantity
             $product->decrement('quantity', $item['quantity']);
         }
 
